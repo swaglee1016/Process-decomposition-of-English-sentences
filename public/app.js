@@ -146,54 +146,51 @@ function handleEvent(event, data) {
   }
 }
 
-// ==================== 双栏渲染（仅独立模式） ====================
+// ==================== 双栏渲染 — 句子级别 ====================
 function renderSections() {
-  // 注销旧 observer
   if (highlightObserver) { highlightObserver.disconnect(); highlightObserver = null; }
 
   leftContent.innerHTML = '';
   rightContent.innerHTML = '';
 
-  // 左栏：段落文字（带 data-section + 点击跳转）
-  for (const [i, sec] of sectionsData.entries()) {
-    const paraDiv = document.createElement('div');
-    paraDiv.className = 'para-text';
-    paraDiv.setAttribute('data-section', i);
-    paraDiv.title = '点击跳转到对应语法图';
-    paraDiv.textContent = sec.paragraph;
-    paraDiv.addEventListener('click', () => {
-      const rightBlock = rightContent.querySelector(`.section-block[data-section="${i}"]`);
-      if (rightBlock) {
-        rightBlock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // 把所有 section 里的句子打平，分配全局句子索引
+  const allSentences = [];
+  for (const sec of sectionsData) {
+    for (const sent of sec.sentences) {
+      allSentences.push(sent);
+    }
+  }
+
+  // 左栏：逐句展示（带 data-section + hover 浅蓝 + 点击跳转）
+  for (const [i, sent] of allSentences.entries()) {
+    const sentDiv = document.createElement('div');
+    sentDiv.className = 'sent-text';
+    sentDiv.setAttribute('data-section', i);
+    sentDiv.title = '点击跳转到对应语法图';
+    sentDiv.textContent = sent.text;
+    sentDiv.addEventListener('click', () => {
+      const target = rightContent.querySelector(`[data-section="${i}"]`);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     });
-    leftContent.appendChild(paraDiv);
+    leftContent.appendChild(sentDiv);
   }
 
-  // 右栏：段落标题 + 句子卡片（带 data-section）
-  for (const [i, sec] of sectionsData.entries()) {
-    const block = document.createElement('div');
-    block.className = 'section-block';
-    block.setAttribute('data-section', i);
-
-    const header = document.createElement('div');
-    header.className = 'para-header';
-    header.textContent = sec.paragraph;
-    block.appendChild(header);
-
-    for (const sent of sec.sentences) {
-      const wrapper = document.createElement('div');
-      wrapper.innerHTML = sent.html;
-      const card = wrapper.firstElementChild;
-      if (card) {
-        card.className = card.innerHTML.includes('⚠️') ? 'sent-card error' : 'sent-card';
-      }
-      block.appendChild(wrapper.firstElementChild);
+  // 右栏：只留句子流程图卡片（不要段落标题）
+  for (const [i, sent] of allSentences.entries()) {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = sent.html;
+    const card = wrapper.firstElementChild;
+    if (card) {
+      card.className = card.innerHTML.includes('⚠️') ? 'sent-card error' : 'sent-card';
+      card.setAttribute('data-section', i);
+      rightContent.appendChild(card);
     }
-    rightContent.appendChild(block);
   }
 
-  // DOM 就绪后挂 observer
+  statusText.textContent = `✅ 完成！${allSentences.length} 个句子`;
+
   requestAnimationFrame(() => setupScrollHighlight());
 }
 
@@ -201,14 +198,11 @@ function renderSections() {
 function setupScrollHighlight() {
   if (highlightObserver) highlightObserver.disconnect();
 
-  // 右栏滚动容器 = .panel-right（overflow-y: auto 的那个）
   const scrollRoot = panelRight;
-  // 监视目标 = 右栏每个 section-block
-  const targets = rightContent.querySelectorAll('.section-block');
+  const targets = rightContent.querySelectorAll('.sent-card');
 
   if (!scrollRoot || targets.length === 0) return;
 
-  // 记录每个 target 当前的可见比例
   const ratios = new Map();
 
   highlightObserver = new IntersectionObserver((entries) => {
@@ -216,7 +210,6 @@ function setupScrollHighlight() {
       ratios.set(e.target, e.intersectionRatio);
     }
 
-    // 找可见比例最大的那个
     let best = null;
     let bestRatio = 0;
     for (const [target, ratio] of ratios) {
@@ -226,10 +219,8 @@ function setupScrollHighlight() {
       }
     }
 
-    // 清除所有左栏高亮
     leftContent.querySelectorAll('.highlight').forEach(el => el.classList.remove('highlight'));
 
-    // 高亮对应的左栏段落
     if (best && bestRatio > 0.05) {
       const idx = best.getAttribute('data-section');
       const leftEl = leftContent.querySelector(`[data-section="${idx}"]`);
