@@ -6,6 +6,69 @@ const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
 
+// 工具：sleep
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// 通用调用接口（带重试）
+async function callDeepSeek(systemPrompt, userPrompt, temperature = 0.1, timeoutMs = 90000, retries = 3) {
+  let lastErr;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt > 0) {
+      const delay = 2000 * Math.pow(2, attempt - 1); // 2s, 4s, 8s
+      console.log(`DeepSeek retry ${attempt}/${retries} after ${delay}ms`);
+      await sleep(delay);
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(DEEPSEEK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: DEEPSEEK_MODEL,
+          temperature,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ]
+        }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        const status = response.status;
+        // 429/503/502 可重试，其他直接抛
+        if (status === 429 || status === 503 || status === 502) {
+          throw new Error(`DeepSeek API ${status} (retryable): ${errText}`);
+        }
+        throw new Error(`DeepSeek API ${status}: ${errText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content || '';
+      if (attempt > 0) console.log(`DeepSeek retry ${attempt} succeeded`);
+      return content;
+    } catch (err) {
+      lastErr = err;
+      // 非重试类错误或已是最后一次，直接抛
+      if (attempt === retries || (!err.message.includes('retryable') && !err.name.includes('AbortError'))) {
+        throw err;
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  throw lastErr;
+}
+
 const SYSTEM_PROMPT = `你是一个 PlantUML 专家。请将句子转换为思维导图。
 
 ⚠️ **核心技术规则（必须遵守）：**
@@ -33,38 +96,7 @@ function buildUserPrompt(sentence) {
 }
 
 async function analyzeSentence(sentence) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 90000);
-
-  try {
-    const response = await fetch(DEEPSEEK_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: DEEPSEEK_MODEL,
-        temperature: 0.1,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: buildUserPrompt(sentence) }
-        ]
-      }),
-      signal: controller.signal
-    });
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      throw new Error(`DeepSeek API ${response.status}: ${errText}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
-    return content;
-  } finally {
-    clearTimeout(timeout);
-  }
+  return callDeepSeek(SYSTEM_PROMPT, buildUserPrompt(sentence), 0.1, 90000);
 }
 
-module.exports = { analyzeSentence };
+module.exports = { callDeepSeek, analyzeSentence };

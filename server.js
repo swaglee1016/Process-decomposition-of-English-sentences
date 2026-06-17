@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const { splitText } = require('./services/textSplitter');
+const { aiReparagraph } = require('./services/paragraphSplitter');
 const { analyzeSentence } = require('./services/deepseek');
 const { parseAndFix } = require('./services/plantumlCode');
 const { renderToPng } = require('./services/plantumlRenderer');
@@ -82,7 +83,17 @@ app.post('/api/process', upload.single('file'), async (req, res) => {
 
     console.log(`Input length: ${article.length} chars`);
 
-    // 2. 拆分
+    // 2. AI 智能分段：修复 PDF 复制文本的假换行问题
+    sse(res, 'progress', { step: 'ai_para', message: 'AI 正在按语义智能分段...' });
+    try {
+      article = await aiReparagraph(article);
+      console.log(`AI reparagraphed: ${article.length} chars`);
+    } catch (err) {
+      console.warn('AI 分段失败，用原始文本继续:', err.message);
+      // 降级：用原始文本继续
+    }
+
+    // 3. 拆分段落和句子
     sse(res, 'progress', { step: 'split', message: '正在拆分段落和句子...' });
     const items = splitText(article);
     const paragraphs = items.filter(i => i.type === 'paragraph');
@@ -101,12 +112,19 @@ app.post('/api/process', upload.single('file'), async (req, res) => {
     let currentSection = null;
     let sentenceIndex = 0;
 
+    // 句子间微延迟，防 API 限流
+    const delayMs = 300;
+
     for (const item of items) {
       if (item.type === 'paragraph') {
         currentSection = { paragraph: item.text, sentences: [] };
         sections.push(currentSection);
       } else {
         sentenceIndex++;
+        if (sentenceIndex > 1 && delayMs > 0) {
+          await new Promise(r => setTimeout(r, delayMs));
+        }
+
         const sentText = item.my_sentence.substring(0, 50);
         console.log(`[${sentenceIndex}/${sentences.length}] analyzing: ${sentText}`);
 
@@ -119,30 +137,42 @@ app.post('/api/process', upload.single('file'), async (req, res) => {
         });
 
         let cardHtml;
-        try {
-          const rawContent = await analyzeSentence(item.my_sentence);
-          const pumlCode = parseAndFix(rawContent);
+        let retries = 2;
+        while (retries >= 0) {
+          try {
+            const rawContent = await analyzeSentence(item.my_sentence);
+            const pumlCode = parseAndFix(rawContent);
 
-          sse(res, 'progress', {
-            step: 'sentence',
-            current: sentenceIndex,
-            total: sentences.length,
-            text: item.my_sentence.substring(0, 80) + (item.my_sentence.length > 80 ? '...' : ''),
-            status: 'rendering'
-          });
+            sse(res, 'progress', {
+              step: 'sentence',
+              current: sentenceIndex,
+              total: sentences.length,
+              text: item.my_sentence.substring(0, 80) + (item.my_sentence.length > 80 ? '...' : ''),
+              status: 'rendering'
+            });
 
-          const pngBuffer = await renderToPng(pumlCode);
+            const pngBuffer = await renderToPng(pumlCode);
 
-          if (pngBuffer) {
-            cardHtml = html.buildSentenceHtml(item.my_sentence, pngBuffer.toString('base64'), 'image/png');
-            console.log(`[${sentenceIndex}/${sentences.length}] OK (${pngBuffer.length} bytes PNG)`);
-          } else {
-            cardHtml = html.buildErrorHtml(item.my_sentence);
-            console.log(`[${sentenceIndex}/${sentences.length}] PlantUML failed, using error card`);
+            if (pngBuffer) {
+              cardHtml = html.buildSentenceHtml(item.my_sentence, pngBuffer.toString('base64'), 'image/png');
+              console.log(`[${sentenceIndex}/${sentences.length}] OK (${pngBuffer.length} bytes PNG)`);
+            } else {
+              cardHtml = html.buildErrorHtml(item.my_sentence);
+              console.log(`[${sentenceIndex}/${sentences.length}] PlantUML render failed, using error card`);
+            }
+            break; // 成功，跳出重试循环
+          } catch (err) {
+            console.error(`[${sentenceIndex}/${sentences.length}] attempt ${3 - retries}/3 ERROR:`, err.message);
+            if (retries > 0) {
+              const waitMs = 2000 * Math.pow(2, 2 - retries); // 2s, 4s
+              console.log(`  retrying after ${waitMs}ms...`);
+              await new Promise(r => setTimeout(r, waitMs));
+              retries--;
+            } else {
+              cardHtml = html.buildErrorHtml(item.my_sentence);
+              retries--;
+            }
           }
-        } catch (err) {
-          console.error(`[${sentenceIndex}/${sentences.length}] ERROR:`, err.message);
-          cardHtml = html.buildErrorHtml(item.my_sentence);
         }
 
         if (currentSection) {

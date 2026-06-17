@@ -186,19 +186,25 @@ textarea:focus { border-color: #3498db; }
   grid-column: 1 / -1;
 }
 
-/* ========== 左栏句子 ========== */
-.sent-text {
+/* ========== 左栏段落 ========== */
+.para-text {
   font-family: 'Georgia', 'Segoe UI', serif;
   font-size: 16px;
   line-height: 1.8;
   color: #2c3e50;
-  padding: 14px 20px;
+  padding: 16px 20px;
   border-bottom: 1px solid #f0f0f0;
   white-space: pre-wrap;
+}
+
+/* 段落内每句：可点击+hover浅蓝 */
+.sent-span {
   cursor: pointer;
   transition: background 0.15s;
+  border-radius: 2px;
+  padding: 1px 0;
 }
-.sent-text:hover {
+.sent-span:hover {
   background: #eef5fb;
 }
 
@@ -274,9 +280,8 @@ textarea:focus { border-color: #3498db; }
 .btn-download:hover { background: #219a52; }
 
 /* ========== 滚动联动高亮 ========== */
-.sent-text.highlight {
-  background: #fff9c4;
+.sent-span.highlight {
+  background: #d6eaf8;
   transition: background 0.3s ease;
-  border-radius: 4px;
-  box-shadow: inset 3px 0 0 #f9a825;
+  box-shadow: 0 0 0 2px #d6eaf8;
 }

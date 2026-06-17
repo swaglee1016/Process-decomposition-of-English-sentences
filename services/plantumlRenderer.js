@@ -6,6 +6,8 @@
 const PLANTUML_LOCAL = process.env.PLANTUML_URL || 'http://localhost:8000/plantuml/png';
 const KROKI_URL = 'https://kroki.io/plantuml/png';
 
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 async function tryRender(url, pumlCode, timeoutMs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -33,12 +35,18 @@ async function renderToPng(pumlCode) {
     // 本地不可用，fallback
   }
 
-  // 尝试 kroki.io（长超时，外网可能慢）
-  try {
-    const result = await tryRender(KROKI_URL, pumlCode, 30000);
-    if (result) return result;
-  } catch {
-    // kroki 也失败
+  // 尝试 kroki.io（长超时，外网可能慢，最多重试 2 次）
+  for (let attempt = 0; attempt <= 2; attempt++) {
+    if (attempt > 0) {
+      console.log(`PlantUML kroki retry ${attempt}/2`);
+      await sleep(2000);
+    }
+    try {
+      const result = await tryRender(KROKI_URL, pumlCode, 30000);
+      if (result) return result;
+    } catch {
+      // kroki 此次失败，继续重试
+    }
   }
 
   return null;

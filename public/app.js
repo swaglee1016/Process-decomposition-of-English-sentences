@@ -134,7 +134,9 @@ processBtn.addEventListener('click', async () => {
 
 function handleEvent(event, data) {
   if (event === 'progress') {
-    if (data.step === 'split') {
+    if (data.step === 'ai_para') {
+      statusText.textContent = data.message;
+    } else if (data.step === 'split') {
       statusText.textContent = data.message;
     } else if (data.step === 'sentence') {
       const pct = Math.round((data.current / data.total) * 100);
@@ -146,50 +148,60 @@ function handleEvent(event, data) {
   }
 }
 
-// ==================== 双栏渲染 — 句子级别 ====================
+// ==================== 双栏渲染 ====================
 function renderSections() {
   if (highlightObserver) { highlightObserver.disconnect(); highlightObserver = null; }
 
   leftContent.innerHTML = '';
   rightContent.innerHTML = '';
 
-  // 把所有 section 里的句子打平，分配全局句子索引
-  const allSentences = [];
+  let globalIdx = 0;
+
+  // 左栏：段落排版不变，每句包 <span data-section>，可单独点击
+  for (const sec of sectionsData) {
+    const paraDiv = document.createElement('div');
+    paraDiv.className = 'para-text';
+
+    for (const sent of sec.sentences) {
+      const span = document.createElement('span');
+      span.className = 'sent-span';
+      span.setAttribute('data-section', globalIdx);
+      span.title = '点击跳转到对应语法图';
+      span.textContent = sent.text;
+      span.addEventListener('click', ((idx) => {
+        return () => {
+          const target = rightContent.querySelector(`.sent-card[data-section="${idx}"]`);
+          if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        };
+      })(globalIdx));
+      paraDiv.appendChild(span);
+      // 句间空格保持间距
+      paraDiv.appendChild(document.createTextNode(' '));
+      globalIdx++;
+    }
+
+    leftContent.appendChild(paraDiv);
+  }
+
+  // 右栏：句子卡片（data-section = 全局句子索引）
+  globalIdx = 0;
   for (const sec of sectionsData) {
     for (const sent of sec.sentences) {
-      allSentences.push(sent);
-    }
-  }
-
-  // 左栏：逐句展示（带 data-section + hover 浅蓝 + 点击跳转）
-  for (const [i, sent] of allSentences.entries()) {
-    const sentDiv = document.createElement('div');
-    sentDiv.className = 'sent-text';
-    sentDiv.setAttribute('data-section', i);
-    sentDiv.title = '点击跳转到对应语法图';
-    sentDiv.textContent = sent.text;
-    sentDiv.addEventListener('click', () => {
-      const target = rightContent.querySelector(`[data-section="${i}"]`);
-      if (target) {
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = sent.html;
+      const card = wrapper.firstElementChild;
+      if (card) {
+        card.className = card.innerHTML.includes('⚠️') ? 'sent-card error' : 'sent-card';
+        card.setAttribute('data-section', globalIdx);
+        rightContent.appendChild(card);
       }
-    });
-    leftContent.appendChild(sentDiv);
-  }
-
-  // 右栏：只留句子流程图卡片（不要段落标题）
-  for (const [i, sent] of allSentences.entries()) {
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = sent.html;
-    const card = wrapper.firstElementChild;
-    if (card) {
-      card.className = card.innerHTML.includes('⚠️') ? 'sent-card error' : 'sent-card';
-      card.setAttribute('data-section', i);
-      rightContent.appendChild(card);
+      globalIdx++;
     }
   }
 
-  statusText.textContent = `✅ 完成！${allSentences.length} 个句子`;
+  statusText.textContent = `✅ 完成！${sectionsData.length} 个段落，${globalIdx} 个句子`;
 
   requestAnimationFrame(() => setupScrollHighlight());
 }
@@ -219,11 +231,13 @@ function setupScrollHighlight() {
       }
     }
 
-    leftContent.querySelectorAll('.highlight').forEach(el => el.classList.remove('highlight'));
+    // 清除所有高亮
+    leftContent.querySelectorAll('.sent-span.highlight').forEach(el => el.classList.remove('highlight'));
 
+    // 高亮左栏对应的句子 span
     if (best && bestRatio > 0.05) {
       const idx = best.getAttribute('data-section');
-      const leftEl = leftContent.querySelector(`[data-section="${idx}"]`);
+      const leftEl = leftContent.querySelector(`.sent-span[data-section="${idx}"]`);
       if (leftEl) leftEl.classList.add('highlight');
     }
   }, {
