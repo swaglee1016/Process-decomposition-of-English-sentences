@@ -14,11 +14,22 @@ const dualPanel = document.getElementById('dualPanel');
 const panelRight = document.getElementById('panelRight');
 const leftContent = document.getElementById('leftContent');
 const rightContent = document.getElementById('rightContent');
+const timeEstimate = document.getElementById('timeEstimate');
 const downloadBtn = document.getElementById('downloadBtn');
 
 let finalHtml = '';
 let sectionsData = [];
 let highlightObserver = null;
+let startTime = 0;
+let sentenceTimes = [];
+
+function formatTime(ms) {
+  if (ms <= 0) return '--';
+  const totalSec = Math.round(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return min > 0 ? `${min}分${sec}秒` : `${sec}秒`;
+}
 
 // ==================== 折叠输入区 ====================
 inputBarHeader.addEventListener('click', () => {
@@ -55,11 +66,14 @@ processBtn.addEventListener('click', async () => {
   processBtn.textContent = '处理中...';
   progressBar.style.width = '0%';
   statusText.textContent = '正在发送...';
+  timeEstimate.textContent = '';
   downloadBtn.style.display = 'none';
   leftContent.innerHTML = '<p class="placeholder">处理中...</p>';
   rightContent.innerHTML = '<p class="placeholder">处理中...</p>';
   finalHtml = '';
   sectionsData = [];
+  startTime = Date.now();
+  sentenceTimes = [];
   if (highlightObserver) { highlightObserver.disconnect(); highlightObserver = null; }
 
   const formData = new FormData();
@@ -116,6 +130,7 @@ processBtn.addEventListener('click', async () => {
         renderSections();
         progressBar.style.width = '100%';
         statusText.textContent = `✅ 完成！${sectionsData.length} 个段落`;
+        timeEstimate.textContent = `总耗时 ${formatTime(Date.now() - startTime)}`;
         downloadBtn.style.display = 'block';
       } else {
         throw new Error('获取结果失败: ' + resp.status);
@@ -126,6 +141,7 @@ processBtn.addEventListener('click', async () => {
 
   } catch (err) {
     statusText.textContent = '错误: ' + err.message;
+    timeEstimate.textContent = `已用 ${formatTime(Date.now() - startTime)}`;
   }
 
   processBtn.disabled = false;
@@ -141,6 +157,10 @@ function handleEvent(event, data) {
     } else if (data.step === 'sentence') {
       const pct = Math.round((data.current / data.total) * 100);
       progressBar.style.width = pct + '%';
+      const elapsed = Date.now() - startTime;
+      const avg = elapsed / data.current;
+      const remaining = avg * (data.total - data.current);
+      timeEstimate.textContent = `已用 ${formatTime(elapsed)} | 预估剩余 ${formatTime(remaining)} | 总预估 ${formatTime(elapsed + remaining)}`;
       statusText.textContent = `[${data.current}/${data.total}] ${data.status === 'analyzing' ? '🧠 AI 分析中' : '🎨 生成思维导图'} — ${data.text}`;
     }
   } else if (event === 'error') {
