@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>English Sentences Process Decomposition</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%233498db'/%3E%3Cpath d='M16 18h32v6H16zm0 11h24v6H16zm0 11h32v6H16z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <section class="input-bar" id="inputBar">
+    <button class="input-bar-header" id="inputBarHeader" type="button">
+      <span class="input-bar-icon">文章输入</span>
+      <span>粘贴英文文章或上传文件</span>
+      <span class="input-bar-arrow" id="inputArrow">▼</span>
+    </button>
+    <div class="input-bar-body">
+      <textarea id="textInput" placeholder="在这里粘贴英文文章……"></textarea>
+      <div class="file-row">
+        <div class="file-zone" id="dropZone">
+          <button class="btn-small" id="fileBtn" type="button">选择文件</button>
+          <span id="fileName">支持 TXT、PDF，也可以拖到这里</span>
+          <input id="fileInput" type="file" accept=".txt,.pdf,text/plain,application/pdf" hidden>
+        </div>
+        <button class="btn-primary" id="processBtn" type="button">开始处理</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="progress-wrap" aria-live="polite">
+    <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressBar"></div></div>
+    <span id="statusText">等待输入</span>
+    <span class="time-estimate" id="timeEstimate"></span>
+  </section>
+
+  <main class="dual-panel" id="dualPanel">
+    <section class="panel-left">
+      <header class="panel-header">排版好的文章</header>
+      <div class="panel-left-content" id="leftContent">
+        <p class="placeholder">处理完成后，完整文章会显示在这里。</p>
+      </div>
+    </section>
+    <section class="panel-right" id="panelRight">
+      <header class="panel-header">句子拆解与思维导图</header>
+      <div class="panel-right-content" id="rightContent">
+        <p class="placeholder">每个句子的分析和流程图会显示在这里。</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="toolbar">
+    <div>
+      <span class="toolbar-hint">点击左侧句子可跳转到右侧对应分析。</span>
+      <span class="save-path" id="savePath"></span>
+    </div>
+    <button class="btn-download" id="downloadBtn" type="button" style="display:none">打开保存的完整 HTML</button>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,4 +1,6 @@
 node_modules/
 .env
 uploads/
-*.html
+/output/*.html
+/output/*.tmp
+/.playwright-mcp/

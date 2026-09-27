@@ -16,8 +16,10 @@ const leftContent = document.getElementById('leftContent');
 const rightContent = document.getElementById('rightContent');
 const timeEstimate = document.getElementById('timeEstimate');
 const downloadBtn = document.getElementById('downloadBtn');
+const savePath = document.getElementById('savePath');
 
-let finalHtml = '';
+let outputUrl = '';
+let outputFilename = '';
 let sectionsData = [];
 let highlightObserver = null;
 let startTime = 0;
@@ -68,9 +70,11 @@ processBtn.addEventListener('click', async () => {
   statusText.textContent = '正在发送...';
   timeEstimate.textContent = '';
   downloadBtn.style.display = 'none';
+  savePath.textContent = '';
   leftContent.innerHTML = '<p class="placeholder">处理中...</p>';
   rightContent.innerHTML = '<p class="placeholder">处理中...</p>';
-  finalHtml = '';
+  outputUrl = '';
+  outputFilename = '';
   sectionsData = [];
   startTime = Date.now();
   sentenceTimes = [];
@@ -125,12 +129,14 @@ processBtn.addEventListener('click', async () => {
       const resp = await fetch('/api/result/' + resultId);
       if (resp.ok) {
         const result = await resp.json();
-        finalHtml = result.html;
+        outputUrl = result.outputUrl || '';
+        outputFilename = result.filename || '';
         sectionsData = result.sections || [];
         renderSections();
         progressBar.style.width = '100%';
         statusText.textContent = `✅ 完成！${sectionsData.length} 个段落`;
         timeEstimate.textContent = `总耗时 ${formatTime(Date.now() - startTime)}`;
+        savePath.textContent = outputFilename ? `已永久保存：output/${outputFilename}` : '';
         downloadBtn.style.display = 'block';
       } else {
         throw new Error('获取结果失败: ' + resp.status);
@@ -191,9 +197,7 @@ function renderSections() {
       span.addEventListener('click', ((idx) => {
         return () => {
           const target = rightContent.querySelector(`.sent-card[data-section="${idx}"]`);
-          if (target) {
-            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
+          if (target) scrollRightCardIntoView(target);
         };
       })(globalIdx));
       paraDiv.appendChild(span);
@@ -224,6 +228,20 @@ function renderSections() {
   statusText.textContent = `✅ 完成！${sectionsData.length} 个段落，${globalIdx} 个句子`;
 
   requestAnimationFrame(() => setupScrollHighlight());
+}
+
+function scrollRightCardIntoView(target) {
+  const header = panelRight.querySelector('.panel-header');
+  const headerHeight = header ? header.offsetHeight : 0;
+  const gap = 14;
+  const rootRect = panelRight.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const top = panelRight.scrollTop + targetRect.top - rootRect.top - headerHeight - gap;
+
+  panelRight.scrollTo({
+    top: Math.max(0, top),
+    behavior: 'smooth'
+  });
 }
 
 // ==================== 滚动联动高亮 ====================
@@ -269,14 +287,8 @@ function setupScrollHighlight() {
   targets.forEach(t => highlightObserver.observe(t));
 }
 
-// ==================== 下载 ====================
+// ==================== 打开已持久化的完整 HTML ====================
 downloadBtn.addEventListener('click', () => {
-  if (!finalHtml) return;
-  const blob = new Blob([finalHtml], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = '超级图文笔记.html';
-  a.click();
-  URL.revokeObjectURL(url);
+  if (!outputUrl) return;
+  window.open(outputUrl, '_blank', 'noopener');
 });

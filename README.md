@@ -14,7 +14,17 @@
 - **双向联动** — 点击左栏句子 → 右栏自动滚动到对应语法图; 滚动右栏 → 左栏对应句子高亮
 - **实时时间预估** — 进度条显示已用时间、预估剩余时间、预估总时间
 - **文件上传 + 粘贴** — 支持直接粘贴文本，或拖拽上传 `.txt` / `.pdf`
-- **下载 HTML** — 处理完成后可下载完整图文笔记（可离线查看）
+- **永久保存完整 HTML** — 每次完成后自动把“左栏文章 + 右栏句子拆解/思维导图 + 联动布局”写入 `outputs/`，关闭浏览器和服务后仍可直接打开
+
+### 结果保存位置
+
+每次处理成功都会生成一个独立文件：
+
+```text
+outputs/sentence-decomposition-YYYYMMDD-HHmmss.html
+```
+
+该 HTML 自包含样式、交互和 base64 图片，不依赖 `localhost`。关闭浏览器、关闭 CMD 窗口或重启电脑后，直接双击这个文件即可回看完整双栏结果。系统不会自动删除历史结果。
 
 ## 快速开始
 
@@ -101,7 +111,8 @@ services/              ← 后端服务模块
 ├── textSplitter.js    ← 段落/句子拆分（Intl.Segmenter）
 ├── plantumlCode.js    ← PlantUML 代码修正（换行、纠错）
 ├── plantumlRenderer.js ← PlantUML → PNG（Docker/kroki 双路）
-└── htmlBuilder.js     ← 下载版 HTML 拼装
+├── htmlBuilder.js     ← 完整离线双栏 HTML 拼装
+└── resultPersistence.js ← 时间戳命名与原子写入 `outputs/`
 
 public/                ← 前端（纯 HTML/CSS/JS，零框架）
 ├── index.html         ← 页面结构
@@ -110,6 +121,7 @@ public/                ← 前端（纯 HTML/CSS/JS，零框架）
 
 server.js              ← Express 服务入口
 start.bat              ← 一键启动脚本（Windows）
+outputs/               ← 每次生成的永久 HTML 结果（不提交 Git）
 ```
 
 ## 技术栈
@@ -146,11 +158,12 @@ textSplitter: 真段落切分 + Intl.Segmenter 智能分句
     │
     ▼
 双栏渲染: sections[] 驱动 DOM 构建
-完整HTML: 用于下载
+完整HTML: 先写入 outputs/，再通知浏览器完成
 ```
 
 ## 版本
 
+- **v1.3** — 完整双栏 HTML 自动持久化到 `outputs/`，支持关闭服务后离线回看
 - **v1.2** — 时间预估追踪 + start.bat 一键启动
 - **v1.1** — AI 段落拆分 + 重试容错
 - **v1.0** — 初始版本（n8n 迁移）

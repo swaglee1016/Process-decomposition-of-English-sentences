@@ -2,7 +2,6 @@ require('dotenv').config();
 
 const express = require('express');
 const multer = require('multer');
-const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const { splitText } = require('./services/textSplitter');
@@ -11,9 +10,12 @@ const { analyzeSentence } = require('./services/deepseek');
 const { parseAndFix } = require('./services/plantumlCode');
 const { renderToPng } = require('./services/plantumlRenderer');
 const html = require('./services/htmlBuilder');
+const { saveResult } = require('./services/resultPersistence');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const APP_ID = 'sentence-process';
+const PORT = process.env.PORT || 3456;
+const OUTPUT_DIR = path.join(__dirname, 'output');
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -27,7 +29,15 @@ setInterval(() => {
   }
 }, 60000);
 
+app.get('/api/health', (req, res) => {
+  res.json({
+    app: APP_ID,
+    status: 'ok'
+  });
+});
+
 app.use(express.static('public'));
+app.use('/output', express.static(OUTPUT_DIR, { index: false }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -181,20 +191,19 @@ app.post('/api/process', upload.single('file'), async (req, res) => {
       }
     }
 
-    // 4. 从 sections 合成完整 HTML（用于下载）
-    let fullHtml = html.buildHeader();
-    for (const s of sections) {
-      fullHtml += html.buildParagraphHtml(s.paragraph);
-      for (const sent of s.sentences) {
-        fullHtml += sent.html;
-      }
-    }
-    fullHtml += html.buildFooter();
-    console.log(`HTML built: ${fullHtml.length} chars`);
+    // 4. 先把完整双栏页面写入磁盘，再通知浏览器完成。
+    const saved = await saveResult({ sections, outputDir: OUTPUT_DIR });
+    const { resultId, filename, outputPath, html: fullHtml } = saved;
+    console.log(`Complete HTML saved: ${outputPath}`);
 
-    // 5. 存入保险箱
-    const resultId = crypto.randomUUID();
-    resultStore.set(resultId, { html: fullHtml, sections, time: Date.now() });
+    // 5. 内存副本只服务当前会话；磁盘文件永久保留。
+    resultStore.set(resultId, {
+      html: fullHtml,
+      sections,
+      filename,
+      outputPath,
+      time: Date.now()
+    });
     console.log(`Result stored with ID: ${resultId}`);
 
     // 6. SSE 只发轻量 ID + sections（不含图片 base64，客户端通过 result API 获取）
@@ -215,9 +224,23 @@ app.get('/api/result/:id', (req, res) => {
   if (!entry) {
     return res.status(404).json({ error: '结果已过期或不存' });
   }
-  res.json({ html: entry.html, sections: entry.sections });
+  res.json({
+    html: entry.html,
+    sections: entry.sections,
+    filename: entry.filename,
+    outputUrl: `/output/${encodeURIComponent(entry.filename)}`
+  });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
+});
+
+server.on('error', err => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use. Close the other app or change PORT in .env.`);
+  } else {
+    console.error('Server failed to start:', err.message);
+  }
+  process.exit(1);
 });
