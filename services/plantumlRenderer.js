@@ -1,55 +1,78 @@
-/**
- * PlantUML 渲染 — 迁移自 n8n "Generate Image1" 节点
- * 先尝试本地 Docker，失败则 fallback 到 kroki.io 在线服务
- */
+/** Local Java rendering only: diagram content is never sent to an HTTP renderer. */
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const childProcess = require('node:child_process');
 
-const PLANTUML_LOCAL = process.env.PLANTUML_URL || 'http://localhost:8000/plantuml/png';
-const KROKI_URL = 'https://kroki.io/plantuml/png';
+function isFile(filename) {
+  try { return fs.statSync(filename).isFile(); } catch { return false; }
+}
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-async function tryRender(url, pumlCode, timeoutMs) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: pumlCode,
-      signal: controller.signal
-    });
-    if (!response.ok) return null;
-    const arrayBuffer = await response.arrayBuffer();
-    return Buffer.from(arrayBuffer);
-  } finally {
-    clearTimeout(timeout);
+function resolveLocalTools({ homeDir = os.homedir(), env = process.env } = {}) {
+  let jarPath = env.PLANTUML_JAR;
+  if (jarPath && !isFile(jarPath)) throw new Error('PLANTUML_JAR does not point to an existing file');
+  if (!jarPath) {
+    const candidates = [];
+    for (const editor of ['.vscode', '.vscode-insiders']) {
+      const directory = path.join(homeDir, editor, 'extensions');
+      let names;
+      try { names = fs.readdirSync(directory); } catch { continue; }
+      for (const name of names) {
+        const candidate = path.join(directory, name, 'plantuml.jar');
+        if (name.startsWith('jebbs.plantuml-') && isFile(candidate)) candidates.push({ name, candidate });
+      }
+    }
+    candidates.sort((a, b) => b.name.localeCompare(a.name, 'en', { numeric: true }));
+    jarPath = candidates[0]?.candidate;
   }
+  if (!jarPath) throw new Error('Local PlantUML JAR was not found; set PLANTUML_JAR or use the installed VS Code PlantUML extension');
+  const javaHomePath = env.JAVA_HOME && path.join(env.JAVA_HOME, 'bin', process.platform === 'win32' ? 'java.exe' : 'java');
+  return { jarPath, javaPath: javaHomePath && isFile(javaHomePath) ? javaHomePath : 'java' };
+}
+
+function childEnvironment() {
+  // Do not expose API credentials or JVM injection options to diagram preprocessor functions.
+  const allowed = new Set(['path', 'systemroot', 'windir', 'temp', 'tmp', 'home', 'userprofile', 'lang', 'lc_all']);
+  return Object.fromEntries(Object.entries(process.env).filter(([key]) => allowed.has(key.toLowerCase())));
+}
+
+function validImage(buffer, format) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length) return false;
+  if (format === 'png') return buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  const source = buffer.toString('utf8').trim();
+  return /^(?:<\?xml[^?]*\?>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg\b[^>]*xmlns=["']http:\/\/www\.w3\.org\/2000\/svg["'][\s\S]*<\/svg>\s*$/.test(source);
+}
+
+function renderLocal(pumlCode, format, localTools) {
+  return new Promise(resolve => {
+    const args = ['-Djava.awt.headless=true', '-DPLANTUML_SECURITY_PROFILE=SANDBOX', '-Xmx256m',
+      '-jar', localTools.jarPath, '-charset', 'UTF-8', `-t${format}`, '-pipe'];
+    const child = childProcess.execFile(localTools.javaPath, args, {
+      encoding: 'buffer', timeout: 30000, maxBuffer: 20 * 1024 * 1024,
+      windowsHide: true, shell: false, env: childEnvironment()
+    }, (error, stdout) => resolve(!error && validImage(stdout, format) ? stdout : null));
+    // The process may exit before consuming stdin (missing Java, invalid input, timeout).
+    child.stdin.on('error', () => {});
+    child.stdin.end(pumlCode, 'utf8');
+  });
+}
+
+function validInput(code) {
+  return typeof code === 'string' && code.trim().length > 0 && Buffer.byteLength(code, 'utf8') <= 1024 * 1024;
+}
+
+async function renderDiagram(pumlCode) {
+  if (!validInput(pumlCode)) return null;
+  const localTools = resolveLocalTools();
+  const svg = await renderLocal(pumlCode, 'svg', localTools);
+  if (svg) return { buffer: svg, mimeType: 'image/svg+xml' };
+  const png = await renderLocal(pumlCode, 'png', localTools);
+  return png ? { buffer: png, mimeType: 'image/png' } : null;
 }
 
 async function renderToPng(pumlCode) {
-  // 先尝试本地 Docker（短超时，因为本地应该很快或直接失败）
-  try {
-    const result = await tryRender(PLANTUML_LOCAL, pumlCode, 8000);
-    if (result) return result;
-  } catch {
-    // 本地不可用，fallback
-  }
-
-  // 尝试 kroki.io（长超时，外网可能慢，最多重试 2 次）
-  for (let attempt = 0; attempt <= 2; attempt++) {
-    if (attempt > 0) {
-      console.log(`PlantUML kroki retry ${attempt}/2`);
-      await sleep(2000);
-    }
-    try {
-      const result = await tryRender(KROKI_URL, pumlCode, 30000);
-      if (result) return result;
-    } catch {
-      // kroki 此次失败，继续重试
-    }
-  }
-
-  return null;
+  if (!validInput(pumlCode)) return null;
+  return renderLocal(pumlCode, 'png', resolveLocalTools());
 }
 
-module.exports = { renderToPng };
+module.exports = { renderDiagram, renderToPng, resolveLocalTools };

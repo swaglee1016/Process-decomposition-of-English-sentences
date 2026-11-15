@@ -1,0 +1,8 @@
+.reading-mode-bar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 12px; position:sticky; top:0; z-index:6; background:#fff; border-bottom:1px solid #dbe3ea; }
+.reading-mode-bar[hidden], #originalContent[hidden], #leftContent[hidden], #readingHeader[hidden] { display:none; }
+.reading-mode-bar button { border:1px solid #b8cadd; border-radius:5px; background:#f1f7fc; color:#176399; font:13px system-ui,sans-serif; padding:6px 10px; cursor:pointer; }
+.reading-mode-bar button[aria-pressed="true"] { background:#d6eaf8; }
+.reading-mode-status { color:#62758a; font:12px/1.4 system-ui,sans-serif; }
+.panel-left:has(.reading-mode-bar:not([hidden])) .reading-header { position:relative; }
+.epub-original-frame { display:block; border:0; width:100%; min-height:80px; background:#fff; }
+#originalContent { background:#fff; padding-bottom:24px; }

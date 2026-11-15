@@ -1,0 +1,14 @@
+.sentence-diagram { margin: 0; text-align: left; }
+.sent-card .sentence-caption { margin: 0 0 5px; padding: 10px 12px; }
+.diagram-canvas { position: relative; height: clamp(280px, 62vh, 680px); overflow: hidden; isolation: isolate; border: 1px solid #dbe3ea; border-radius: 7px; background: white; cursor: grab; touch-action: pan-y; outline: none; }
+.diagram-canvas[data-active="true"] { box-shadow: inset 0 0 0 2px #3498db; touch-action: none; }
+.diagram-canvas.is-dragging { cursor: grabbing; }
+.diagram-canvas:focus-visible { outline: 2px solid #3498db; outline-offset: 2px; }
+.diagram-canvas .canvas-image { position: absolute; left: 0; top: 0; display: block; max-width: none !important; max-height: none !important; margin: 0 !important; border: 0 !important; border-radius: 0; box-shadow: none !important; transform-origin: 0 0; user-select: none; pointer-events: none; }
+.canvas-controls { position: absolute; z-index: 2; right: 8px; top: 8px; display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid #dbe3ea; border-radius: 6px; background: rgba(255,255,255,.94); box-shadow: 0 1px 4px #0001; }
+.canvas-controls button { appearance: none; margin: 0; min-width: 28px; height: 28px; padding: 0 6px; border: 0; border-radius: 4px; background: transparent; color: #315774; font: 13px system-ui,sans-serif; cursor: pointer; }
+.canvas-controls button:hover { background: #e8f2fb; }
+.canvas-controls button:focus-visible { outline: 2px solid #3498db; }
+.canvas-zoom { min-width: 40px; color: #526579; text-align: center; font: 12px system-ui,sans-serif; }
+.canvas-help { position: absolute; z-index: 1; bottom: 6px; left: 8px; padding: 2px 5px; color: #607589; background: rgba(255,255,255,.9); border-radius: 3px; font: 11px system-ui,sans-serif; pointer-events: none; }
+@media(max-width:700px) { .diagram-canvas { min-height: 240px; } }

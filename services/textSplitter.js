@@ -1,59 +1,55 @@
-/**
- * 文本拆分服务 — 迁移自 n8n "split paragraph" Code 节点
- *
- * 核心逻辑：
- * 1. 统一换行符
- * 2. 找句号/问号/叹号/右引号 + 换行 → 标记为真段落分界
- * 3. 剩余换行 → 空格（缝合 PDF/OCR 假换行）
- * 4. Intl.Segmenter 智能分句
- */
+// Paragraph boundaries are established before sentence splitting. Offsets are
+// JavaScript string (UTF-16) offsets into the paragraph item.
+const HONORIFICS = new Set(['Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Prof.', 'Sr.', 'Jr.']);
+const NAME_PREFIXES = new Set(['St.', 'Mt.']);
+const CLOSERS = /["'”’\)\]]/;
 
-function splitText(article) {
-  // 兼容多种输入：article / text / content 字段，或纯字符串
-  if (typeof article === 'object') {
-    article = article.article || article.text || article.content || '';
-  }
-  if (!article || typeof article !== 'string') {
-    article = String(article || '');
-  }
+function sentenceRanges(paragraph) {
+  const ranges = [];
+  let start = 0;
+  for (let i = 0; i < paragraph.length; i++) {
+    const mark = paragraph[i];
+    if (!'.?!'.includes(mark)) continue;
+    if (mark === '.' && /\d/.test(paragraph[i - 1] || '') && /\d/.test(paragraph[i + 1] || '')) continue;
 
-  // 1. 统一换行符
-  let cleanText = article.replace(/\r\n/g, '\n');
+    let end = i + 1;
+    while (end < paragraph.length && CLOSERS.test(paragraph[end])) end++;
+    if (end < paragraph.length && !/\s/.test(paragraph[end])) continue;
 
-  // 2. 句号/问号/叹号/右引号 + 换行 → 真段落分界标记
-  cleanText = cleanText.replace(/([.?!]["”']?)\s*\n+/g, '$1%%%PARA%%%');
-
-  // 3. 剩余换行 → 空格（缝合假换行）
-  cleanText = cleanText.replace(/\n/g, ' ');
-
-  // 4. 清理连续空格
-  cleanText = cleanText.replace(/\s{2,}/g, ' ');
-
-  // 5. 按真段落分界切分
-  const paragraphs = cleanText.split('%%%PARA%%%').filter(p => p.trim().length > 0);
-
-  // 6. 对每个段落用 Intl.Segmenter 智能分句
-  const items = [];
-  const segmenter = new Intl.Segmenter('en', { granularity: 'sentence' });
-
-  for (const p of paragraphs) {
-    items.push({
-      type: 'paragraph',
-      text: p.trim()
-    });
-
-    const segments = segmenter.segment(p);
-    for (const seg of segments) {
-      const clean = seg.segment.trim();
-      if (clean.length > 5) {
-        items.push({
-          type: 'sentence',
-          my_sentence: clean
-        });
+    const token = (paragraph.slice(start, i + 1).match(/(?:^|\s)([^\s]+)$/)?.[1] || '')
+      .replace(/^["'“‘([{]+/, '');
+    const following = paragraph.slice(end).trimStart();
+    if (mark === '.') {
+      if (HONORIFICS.has(token) || /^[A-Z]\.$/.test(token)) continue;
+      if (NAME_PREFIXES.has(token) && /^[A-Z]/.test(following)) continue;
+      if (/^(?:[A-Za-z]\.){2,}$/.test(token) || /^(?:etc|p\.m|a\.m)\.$/i.test(token)) {
+        if (/^[a-z]/.test(following)) continue;
       }
     }
-  }
+    if (end > i + 1 && /^[a-z]/.test(following)) continue;
 
+    while (start < end && /\s/.test(paragraph[start])) start++;
+    if (end > start) ranges.push([start, end]);
+    start = end;
+  }
+  while (start < paragraph.length && /\s/.test(paragraph[start])) start++;
+  let end = paragraph.length;
+  while (end > start && /\s/.test(paragraph[end - 1])) end--;
+  if (end > start) ranges.push([start, end]);
+  return ranges;
+}
+
+function splitText(article) {
+  if (article && typeof article === 'object') article = article.article || article.text || article.content || '';
+  const text = String(article || '').replace(/\r\n?/g, '\n');
+  const paragraphs = text.split(/\n\s*\n+/).map(part => part.replace(/\n/g, ' ').trim()).filter(Boolean);
+  const items = [];
+  for (const paragraph of paragraphs) {
+    items.push({ type: 'paragraph', text: paragraph });
+    for (const [start, end] of sentenceRanges(paragraph)) {
+      items.push({ type: 'sentence', my_sentence: paragraph.slice(start, end), start, end });
+    }
+  }
   return items;
 }
 

@@ -2,6 +2,37 @@
  * HTML 组装 — 迁移自 n8n "Init HTML" / "1. 组装段落 HTML" / "3. 组装图片 HTML" / "Download HTML" 节点
  */
 
+const fs = require('node:fs');
+const path = require('node:path');
+const { buildParallelParagraph } = require('../public/studyShared');
+const viewerScript = fs.readFileSync(path.join(__dirname, '../public/diagramViewer.js'), 'utf8');
+const canvasScript = fs.readFileSync(path.join(__dirname, '../public/inlineDiagramCanvas.js'), 'utf8');
+const canvasStyle = fs.readFileSync(path.join(__dirname, '../public/inlineDiagramCanvas.css'), 'utf8');
+const readingStyle = fs.readFileSync(path.join(__dirname, '../public/parallelReading.css'), 'utf8');
+const navigationScript = fs.readFileSync(path.join(__dirname, '../public/studyNavigation.js'), 'utf8');
+const originalScript = fs.readFileSync(path.join(__dirname, '../public/epubOriginal.js'), 'utf8');
+const originalStyle = fs.readFileSync(path.join(__dirname, '../public/epubOriginal.css'), 'utf8');
+const vocabularyScript = fs.readFileSync(path.join(__dirname, '../public/vocabulary.js'), 'utf8');
+const vocabularySharedScript = fs.readFileSync(path.join(__dirname, '../public/vocabularyShared.js'), 'utf8');
+const vocabularyStyle = fs.readFileSync(path.join(__dirname, '../public/vocabulary.css'), 'utf8');
+const workspaceScript = fs.readFileSync(path.join(__dirname, '../public/readingWorkspace.js'), 'utf8');
+const workspaceStyle = fs.readFileSync(path.join(__dirname, '../public/readingWorkspace.css'), 'utf8');
+const { normalizeOriginal } = require('../public/epubOriginal');
+
+function imageSource(base64, mimeType) {
+  if (!['image/png', 'image/svg+xml'].includes(mimeType) || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
+    throw new TypeError('Unsupported diagram image');
+  }
+  return `data:${mimeType};base64,${base64}`;
+}
+
+function buildDiagramPage(sentence, base64, mimeType) {
+  return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>句子结构图 · 独立查看</title>
+<style>*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:#eef2f6;color:#25364a;display:flex;flex-direction:column;height:100vh}header{padding:12px 18px;background:white;border-bottom:1px solid #dbe3ea}nav{display:flex;align-items:center;flex-wrap:wrap;gap:8px}button{padding:8px 14px;border:1px solid #bac9d8;border-radius:6px;background:white;cursor:pointer;font-size:14px}button:hover{background:#e8f2fb}button:focus-visible{outline:3px solid #3498db}details{margin-top:10px;font-size:14px}details p{max-height:18vh;overflow:auto;white-space:pre-wrap}#diagramViewport{flex:1;min-height:0;overflow:auto;cursor:grab;touch-action:none}#diagramViewport.dragging{cursor:grabbing}#diagramStage{padding:16px;position:relative}#diagramImage{display:block;max-width:none;user-select:none;background:white;box-shadow:0 2px 10px #0001}.hint{font-size:12px;color:#65758a;margin-left:auto}#zoomLabel{min-width:4em;text-align:center}</style></head><body>
+<header><nav aria-label="图片查看工具"><button id="zoomFit">适配窗口</button><button id="zoomActual">100%</button><button id="zoomOut" aria-label="缩小">−</button><output id="zoomLabel" aria-live="polite">100%</output><button id="zoomIn" aria-label="放大">＋</button><span class="hint">滚轮缩放 · 拖动平移 · 键盘 + / − / 0</span></nav><details><summary>查看完整句子</summary><p>${escapeHtml(sentence)}</p></details></header>
+<main id="diagramViewport" tabindex="0" aria-label="结构图，可拖动或使用键盘缩放"><div id="diagramStage"><img id="diagramImage" draggable="false" alt="句子语法结构图" src="${imageSource(base64, mimeType)}"></div></main><script>${viewerScript}</script></body></html>`;
+}
+
 function buildHeader() {
   return `<!DOCTYPE html>
 <html><head><meta charset='utf-8'></head><body style='background:#f4f7f6; padding: 20px; max-width: 800px; margin: auto;'>`;
@@ -15,18 +46,46 @@ function buildParagraphHtml(text) {
   return `<div style="font-family: 'Segoe UI', sans-serif; color: #2c3e50; font-size: 20px; font-weight: bold; margin-top: 30px; margin-bottom: 10px; border-bottom: 2px solid #ecf0f1; padding-bottom: 5px;">${escapeHtml(text)}</div>\n`;
 }
 
-function buildSentenceHtml(sentence, base64Img, mimeType) {
+function imageDimensions(base64, mimeType) {
+  const buffer = Buffer.from(base64, 'base64');
+  let width = 0, height = 0;
+  if (mimeType === 'image/png' && buffer.length >= 24 && buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) {
+    width = buffer.readUInt32BE(16); height = buffer.readUInt32BE(20);
+  } else if (mimeType === 'image/svg+xml') {
+    const root = buffer.toString('utf8',0,Math.min(buffer.length,8192)).match(/<svg\b[^>]*>/i)?.[0] || '';
+    const dimension = name => {
+      const value = root.match(new RegExp(`\\b${name}=["']([0-9.]+)(px|pt)?["']`, 'i'));
+      return value ? Number(value[1]) * (value[2]?.toLowerCase() === 'pt' ? 4/3 : 1) : 0;
+    };
+    width = dimension('width'); height = dimension('height');
+    if (!width || !height) {
+      const box = root.match(/\bviewBox=["']([^"']+)["']/i)?.[1].trim().split(/[\s,]+/).map(Number);
+      if (box?.length === 4) { width = box[2]; height = box[3]; }
+    }
+  }
+  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+    ? ` data-image-width="${width}" data-image-height="${height}"` : '';
+}
+
+function buildSentenceHtml(sentence, base64Img, mimeType, diagramFilename = '') {
   return `
-<div style="font-family: 'Segoe UI', sans-serif; margin-bottom: 20px; text-align: center;">
-  <p style="font-size: 16px; color: #34495e; text-align: left; background: #ffffff; padding: 15px; border-left: 5px solid #3498db; border-radius: 4px; line-height: 1.6; box-shadow: 0 2px 5px rgba(0,0,0,0.02); margin: 0 0 10px 0;">${escapeHtml(sentence)}</p>
-  <img src="data:${mimeType};base64,${base64Img}" style="max-width: 100%; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); margin-top: 5px;" />
+<div class="sentence-diagram">
+  <p class="sentence-caption">${escapeHtml(sentence)}</p>
+  <div class="diagram-canvas"${imageDimensions(base64Img,mimeType)} tabindex="0" role="group" aria-label="句子结构图画布，点击后滚轮缩放，拖动平移，Esc 退出">
+    <img class="canvas-image" draggable="false" loading="lazy" decoding="async" alt="句子语法结构图" src="${imageSource(base64Img, mimeType)}" />
+    <div class="canvas-controls" role="group" aria-label="画布缩放工具">
+      <button type="button" data-canvas-action="out" aria-label="缩小" title="缩小">−</button><output class="canvas-zoom" aria-live="polite">100%</output><button type="button" data-canvas-action="in" aria-label="放大" title="放大">＋</button>
+      <button type="button" data-canvas-action="actual" title="原始大小">100%</button><button type="button" data-canvas-action="fit" aria-label="适配整图" title="适配整图">↺</button>
+    </div>
+    <span class="canvas-help">点击后滚轮缩放 · 拖动平移</span>
+  </div>
 </div>\n`;
 }
 
-function buildErrorHtml(sentence) {
+function buildErrorHtml(sentence, message = '此句处理失败，请重试') {
   return `
 <div style="font-family: 'Segoe UI', sans-serif; margin-bottom: 20px; text-align: center;">
-  <p style="font-size: 16px; color: #e74c3c; text-align: left; background: #fdf2f0; padding: 15px; border-left: 5px solid #e74c3c; border-radius: 4px; margin: 0 0 10px 0;"><b>[⚠️ 此句 AI 语法出错，跳过画图]</b> ${escapeHtml(sentence)}</p>
+  <p style="font-size: 16px; color: #e74c3c; text-align: left; background: #fdf2f0; padding: 15px; border-left: 5px solid #e74c3c; border-radius: 4px; margin: 0 0 10px 0;"><b>[⚠️ ${escapeHtml(message)}]</b> ${escapeHtml(sentence)}</p>
 </div>\n`;
 }
 
@@ -40,6 +99,12 @@ function escapeHtml(text) {
 }
 
 function buildCompleteStudyHtml(sections, options = {}) {
+  const vocabularyData=JSON.stringify(options.vocabulary||{words:[]}).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
+  const original = normalizeOriginal(options.original);
+  const resultData = JSON.stringify({sections})
+    .replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
+  const readingData = JSON.stringify({original,filename:options.filename,sections:sections.map(section=>({paragraph:section.paragraph,sentences:(section.sentences || []).map(sentence=>({text:sentence.text,translation:sentence.translation||''}))}))})
+    .replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
   const generatedAt = options.generatedAt instanceof Date
     ? options.generatedAt
     : new Date();
@@ -49,14 +114,10 @@ function buildCompleteStudyHtml(sections, options = {}) {
 
   for (const [sectionIndex, section] of sections.entries()) {
     const sentences = Array.isArray(section.sentences) ? section.sentences : [];
-    const leftSentences = sentences.length > 0
-      ? sentences.map((sentence) => {
-        const index = globalIndex++;
-        return `<span class="sent-span" data-section="${index}" tabindex="0">${escapeHtml(sentence.text)}</span>`;
-      }).join(' ')
-      : escapeHtml(section.paragraph);
+    const firstIndex = globalIndex;
+    globalIndex += sentences.length;
 
-    leftSections.push(`<div class="para-text">${leftSentences}</div>`);
+    leftSections.push(buildParallelParagraph(section, firstIndex));
 
     const firstSentenceIndex = globalIndex - sentences.length;
     const cards = sentences.map((sentence, sentenceIndex) => {
@@ -98,6 +159,10 @@ function buildCompleteStudyHtml(sections, options = {}) {
     .sent-card { margin: 0 12px 18px; scroll-margin-top: 52px; }
     .sent-card > div { margin-bottom: 0 !important; }
     .sent-card img { max-width: 100% !important; height: auto; }
+    .sentence-caption { color: #34495e; background: white; border-left: 4px solid #3498db; border-radius: 4px; font: 16px/1.6 'Segoe UI',sans-serif; text-align: left; }
+    .para-text { white-space: pre-wrap; }
+    .article-image { display: block; max-width: 100%; margin: 10px auto; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+    .column-control { font-size: 12px; color: #526579; }
     @media (max-width: 860px) {
       .page-header { align-items: flex-start; flex-direction: column; gap: 4px; }
       .dual-panel { grid-template-columns: 1fr; height: auto; }
@@ -105,53 +170,51 @@ function buildCompleteStudyHtml(sections, options = {}) {
       .panel-left { border-right: 0; border-bottom: 1px solid #dbe3ea; }
       .panel-header { position: static; }
     }
+    ${canvasStyle}
+    ${readingStyle}
+    ${originalStyle}
+    ${vocabularyStyle}
+    ${workspaceStyle}
   </style>
 </head>
 <body>
   <header class="page-header">
     <h1>English Sentences Process Decomposition</h1>
+    <label class="column-control">原文与译文栏宽 <input id="columnWidth" type="range" min="25" max="60" value="40" aria-label="原文与译文栏宽"></label>
     <time datetime="${generatedAt.toISOString()}">生成时间：${escapeHtml(generatedAt.toLocaleString())}</time>
   </header>
   <main class="dual-panel">
     <section class="panel-left">
-      <h2 class="panel-header">排版好的文章</h2>
-      <div class="panel-content">${leftSections.join('\n')}</div>
+      <div class="reading-mode-bar" id="readingModeBar"${original ? '' : ' hidden'}><button id="readingModeToggle" type="button" aria-pressed="false">切换至 EPUB 原版</button><span class="reading-mode-status" id="readingModeStatus" role="status"></span></div>
+      <h2 class="panel-header reading-header" id="readingHeader"><span>英文原文</span><span>中文翻译</span></h2>
+      <div class="panel-content" id="leftContent">${leftSections.join('\n')}</div>
+      <div id="originalContent" hidden></div>
     </section>
     <section class="panel-right" id="panelRight">
       <h2 class="panel-header">句子拆解与思维导图</h2>
       <div class="panel-content" id="rightContent">${rightSections.join('\n')}</div>
     </section>
   </main>
+  <script>${canvasScript}</script>
+  <script>${navigationScript}</script>
+  <script type="application/json" id="epubOriginalData">${readingData}</script>
+  <script type="application/json" id="readerResultData">${resultData}</script>
+  <script type="application/json" id="passageRecapData">null</script>
+  <script>${originalScript}</script>
+  <script type="application/json" id="vocabularyData">${vocabularyData}</script>
+  <script>${vocabularySharedScript}</script>
+  <script>${vocabularyScript}</script>
+  <script>${workspaceScript}</script>
   <script>
     (() => {
-      const leftItems = Array.from(document.querySelectorAll('.sent-span'));
-      const rightItems = Array.from(document.querySelectorAll('.sent-card'));
-      const rightPanel = document.getElementById('panelRight');
-      const activate = (index, shouldScroll) => {
-        leftItems.forEach((item) => item.classList.toggle('highlight', item.dataset.section === index));
-        const target = document.querySelector('.sent-card[data-section="' + index + '"]');
-        if (shouldScroll && target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      };
-      leftItems.forEach((item) => {
-        const open = () => activate(item.dataset.section, true);
-        item.addEventListener('click', open);
-        item.addEventListener('keydown', (event) => {
-          if (event.key === 'Enter' || event.key === ' ') open();
-        });
+      document.getElementById('columnWidth').addEventListener('input', event => {
+        if (window.innerWidth > 860) document.querySelector('.dual-panel').style.gridTemplateColumns = event.target.value + '% minmax(0,1fr)';
       });
-      if ('IntersectionObserver' in window && rightPanel && rightItems.length) {
-        const visibility = new Map();
-        const observer = new IntersectionObserver((entries) => {
-          entries.forEach((entry) => visibility.set(entry.target, entry.intersectionRatio));
-          let best = null;
-          let ratio = 0;
-          visibility.forEach((value, item) => {
-            if (value > ratio) { ratio = value; best = item; }
-          });
-          if (best && ratio > 0.05) activate(best.dataset.section, false);
-        }, { root: rightPanel, threshold: [0, .1, .25, .5, .75] });
-        rightItems.forEach((item) => observer.observe(item));
-      }
+      const data=JSON.parse(document.getElementById('epubOriginalData').textContent);
+      Vocabulary.mount({snapshot:JSON.parse(document.getElementById('vocabularyData').textContent),source:document.title});
+      const epub=EpubOriginal.mount({original:data.original,sections:data.sections,left:document.querySelector('.panel-left'),right:document.getElementById('panelRight'),
+        parallel:document.getElementById('leftContent'),container:document.getElementById('originalContent'),bar:document.getElementById('readingModeBar'),toggle:document.getElementById('readingModeToggle'),status:document.getElementById('readingModeStatus'),header:document.getElementById('readingHeader')});
+      ReadingWorkspace.mount({filename:data.filename,recap:JSON.parse(document.getElementById('passageRecapData').textContent),connection:JSON.parse(document.getElementById('vocabularyData').textContent),original:data.original,sections:data.sections,epub,left:document.querySelector('.panel-left'),right:document.getElementById('panelRight')});
     })();
   </script>
 </body>
@@ -164,5 +227,6 @@ module.exports = {
   buildParagraphHtml,
   buildSentenceHtml,
   buildErrorHtml,
-  buildCompleteStudyHtml
+  buildCompleteStudyHtml,
+  buildDiagramPage
 };

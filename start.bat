@@ -1,5 +1,5 @@
 @echo off
 cd /d "%~dp0"
-start http://localhost:3456
-node server.js
+title Sentence Process - Local SVG
+node launcher.js
 pause

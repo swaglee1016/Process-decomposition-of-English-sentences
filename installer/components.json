@@ -1,0 +1,35 @@
+[
+  {
+    "Id": "node",
+    "Name": "Node.js",
+    "Version": "22.23.4",
+    "Url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-win-x64.zip",
+    "Sha256": "cbc74b5e0982c9dbb41525fd8fb5dcd32fbee237863f7829072f4639a1ce5f20",
+    "Size": 35604229,
+    "Kind": "zip",
+    "Executable": "node-v22.23.4-win-x64/node.exe",
+    "LicenseUrl": "https://github.com/nodejs/node/blob/main/LICENSE"
+  },
+  {
+    "Id": "java",
+    "Name": "Java (Eclipse Temurin)",
+    "Version": "17.0.21+9",
+    "Url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21%2B9/OpenJDK17U-jre_x64_windows_hotspot_17.0.21_9.zip",
+    "Sha256": "fe4656bd78fb09812dc38c49da777f79cc33e7ee435a254be82f9e7f40d9d117",
+    "Size": 43860024,
+    "Kind": "zip",
+    "Executable": "jdk-17.0.21+9-jre/bin/java.exe",
+    "LicenseUrl": "https://adoptium.net/about/licensing/"
+  },
+  {
+    "Id": "plantuml",
+    "Name": "PlantUML",
+    "Version": "1.2026.9 (MIT)",
+    "Url": "https://github.com/plantuml/plantuml/releases/download/v1.2026.9/plantuml-mit-1.2026.9.jar",
+    "Sha256": "835b2f2eb1d756da3f03bffdbd0baf252b4b858547a741ac8e972958a09c7f91",
+    "Size": 17893617,
+    "Kind": "file",
+    "Executable": "plantuml.jar",
+    "LicenseUrl": "https://plantuml.com/download"
+  }
+]

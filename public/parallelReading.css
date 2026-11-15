@@ -1,0 +1,17 @@
+.reading-header { display: grid; grid-template-columns: minmax(0,3fr) minmax(0,1fr); gap: 12px; }
+.reading-header > :last-child { font-weight: 400; }
+.parallel-paragraph { --reading-line-height: 30.6px; display: grid; grid-template-columns: minmax(0,3fr) minmax(0,1fr); column-gap: 12px; padding: 15px 8px; border-bottom: 1px solid #dbe3ea; }
+.parallel-paragraph .para-text { display: block; align-self: start; min-width: 0; margin: 0; padding: 0; border: 0; font: 18px/var(--reading-line-height) Georgia,'Segoe UI',serif; white-space: pre-wrap; overflow-wrap: anywhere; }
+.translation-paragraph { display: block; align-self: start; min-width: 0; margin: 0; border-left: 1px solid #dbe3ea; padding-left: 10px; font: 14px/var(--reading-line-height) 'Segoe UI','Microsoft YaHei',sans-serif; color: #465669; white-space: pre-wrap; overflow-wrap: anywhere; }
+.parallel-paragraph .sent-span, .translation-text { display: inline; font: inherit; }
+.translation-text { cursor: pointer; border-radius: 2px; }
+.translation-text:hover { background: #eef5fb; }
+.translation-text.highlight, .parallel-paragraph .sent-span.highlight { background: #d6eaf8; box-shadow: 0 0 0 2px #d6eaf8; }
+.parallel-paragraph [role="button"]:focus-visible { outline: 2px solid #247ab5; outline-offset: 2px; }
+.panel-right { scroll-behavior: auto; overflow-anchor: none; }
+@media(max-width:700px) {
+  .parallel-paragraph, .reading-header { grid-template-columns: minmax(0,2fr) minmax(0,1fr); gap: 8px; }
+  .parallel-paragraph { --reading-line-height: 28.9px; }
+  .parallel-paragraph .para-text { font-size: 17px; }
+  .translation-paragraph { padding-left: 8px; }
+}

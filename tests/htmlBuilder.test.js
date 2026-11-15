@@ -34,6 +34,8 @@ test('complete study HTML preserves the full offline two-column result', () => {
   assert.match(document, /diagram-marker/);
   assert.match(document, /data:image\/png;base64,AA==/);
   assert.match(document, /scrollIntoView/);
-  assert.doesNotMatch(document, /fetch\s*\(/);
-  assert.doesNotMatch(document, /\/api\//);
+  // Explicit vocabulary synchronization can connect to localhost. All reading
+  // assets remain embedded; the stopped-server browser test checks no auto-fetch.
+  assert.doesNotMatch(document, /<script[^>]+src=|<link[^>]+stylesheet/);
+  assert.deepEqual(JSON.parse(document.match(/id="vocabularyData">([^<]*)<\/script>/)[1]),{words:[]});
 });
